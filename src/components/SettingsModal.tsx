@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { UserSettings } from '../types';
 import { POPULAR_TIMEZONES } from '../utils/sessions';
-import { X, Sliders, RotateCcw, Trash2, Sun, Moon, Volume2 } from 'lucide-react';
+import { X, Sliders, RotateCcw, Trash2, Sun, Moon, Volume2, Download, GitBranch, Copy, Check } from 'lucide-react';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -28,6 +28,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [maxRiskPercent, setMaxRiskPercent] = useState(settings.maxRiskPerTradePercent.toString());
   const [soundAlerts, setSoundAlerts] = useState(settings.soundAlerts);
   const [theme, setTheme] = useState<'light' | 'dark'>(settings.theme);
+  const [copiedGit, setCopiedGit] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -172,6 +173,56 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               onChange={e => setSoundAlerts(e.target.checked)}
               className="w-4 h-4 rounded text-slate-900"
             />
+          </div>
+
+          {/* GitHub & Source Export */}
+          <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+              Source Code & GitHub Repository
+            </span>
+
+            <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/80 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <GitBranch className="w-4 h-4 text-emerald-500" />
+                  <span className="font-bold text-slate-900 dark:text-white">
+                    Push to Your GitHub
+                  </span>
+                </div>
+                <a
+                  href="/tradelog-source.zip"
+                  download="tradelog-source.zip"
+                  className="px-2.5 py-1 bg-slate-900 text-white dark:bg-white dark:text-slate-900 rounded-lg text-[11px] font-bold flex items-center gap-1 hover:opacity-90"
+                >
+                  <Download className="w-3 h-3" />
+                  <span>Download .ZIP</span>
+                </a>
+              </div>
+
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                To link and push TradeLog to your GitHub account:
+              </p>
+
+              <div className="p-2 bg-slate-900 text-slate-200 rounded-lg font-mono text-[10px] space-y-1 relative">
+                <div>git remote add origin https://github.com/&lt;user&gt;/&lt;repo&gt;.git</div>
+                <div>git branch -M main</div>
+                <div>git push -u origin main</div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (navigator.clipboard) {
+                      navigator.clipboard.writeText('git remote add origin <YOUR_REPO_URL>\ngit branch -M main\ngit push -u origin main');
+                      setCopiedGit(true);
+                      setTimeout(() => setCopiedGit(false), 2000);
+                    }
+                  }}
+                  className="absolute top-1.5 right-1.5 p-1 bg-slate-800 text-slate-300 rounded hover:text-white"
+                  title="Copy commands"
+                >
+                  {copiedGit ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Reset & Wipe Options */}

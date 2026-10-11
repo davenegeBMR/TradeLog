@@ -1,0 +1,6 @@
+{
+  "name": "TradeLog",
+  "description": "Mobile-first trading journal, session alarms, discipline challenges, and performance analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

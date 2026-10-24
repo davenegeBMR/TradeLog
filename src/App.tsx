@@ -26,7 +26,7 @@ import {
 } from './utils/storage';
 import { calculateAnalytics } from './utils/analytics';
 import { getNextUpcomingSession } from './utils/sessions';
-import { playSessionChime } from './utils/sound';
+import { playSessionAlarm, playSessionChime, stopSessionAlarm } from './utils/sound';
 import { INITIAL_CHALLENGES, INITIAL_RULES, INITIAL_TRADES } from './utils/defaultData';
 import { DEFAULT_SESSIONS } from './utils/sessions';
 
@@ -64,6 +64,7 @@ export default function App() {
   // Active triggered alarm state
   const [triggeredAlarm, setTriggeredAlarm] = useState<NextSessionAlarm | null>(null);
   const lastAlarmKeyRef = useRef<string>('');
+  const lastActiveSessionIdRef = useRef<string>('');
 
   // Sync dark class on root html
   useEffect(() => {
@@ -76,7 +77,7 @@ export default function App() {
     }
   }, [settings.theme]);
 
-  // Compute upcoming session alarm
+  // Compute upcoming session alarm & track transitions
   const [nextAlarm, setNextAlarm] = useState<NextSessionAlarm | null>(null);
 
   useEffect(() => {
@@ -84,32 +85,77 @@ export default function App() {
       const upcoming = getNextUpcomingSession(sessions, settings.timezone);
       setNextAlarm(upcoming);
 
-      if (upcoming && upcoming.isAlarmTriggeredNow) {
-        const alarmKey = `${upcoming.session.id}-${upcoming.startDate.toISOString()}`;
-        if (lastAlarmKeyRef.current !== alarmKey) {
-          lastAlarmKeyRef.current = alarmKey;
-          setTriggeredAlarm(upcoming);
-
-          if (settings.soundAlerts) {
-            playSessionChime();
-          }
-
+      if (upcoming) {
+        // 1. Session Transition detection (e.g. Asian session ends and London takes over)
+        if (upcoming.isActiveRightNow) {
           if (
-            typeof Notification !== 'undefined' &&
-            Notification.permission === 'granted'
+            lastActiveSessionIdRef.current &&
+            lastActiveSessionIdRef.current !== upcoming.session.id
           ) {
-            new Notification(`${upcoming.session.name} Alarm!`, {
-              body: `Session opens at ${upcoming.formattedLocalTime}. Reminder: ${upcoming.session.prepReminder}`,
-            });
+            // A session switch occurred!
+            if (settings.notifyOnSessionSwitch) {
+              setTriggeredAlarm(upcoming);
+              if (settings.soundAlerts) {
+                playSessionAlarm({
+                  durationSeconds: settings.alertDurationSeconds || 5,
+                  tone: settings.alertSoundTone || 'chime',
+                });
+              }
+              if (
+                typeof Notification !== 'undefined' &&
+                Notification.permission === 'granted'
+              ) {
+                new Notification(`Session Switch: ${upcoming.session.name} Active`, {
+                  body: `Market session switched to ${upcoming.session.name}. Active reminder: ${upcoming.session.prepReminder}`,
+                });
+              }
+            }
+          }
+          lastActiveSessionIdRef.current = upcoming.session.id;
+        } else {
+          // If no session is active right now, reset active tracking
+          lastActiveSessionIdRef.current = '';
+        }
+
+        // 2. Scheduled Lead-Time Alarm before session open
+        if (upcoming.isAlarmTriggeredNow) {
+          const alarmKey = `${upcoming.session.id}-${upcoming.startDate.toISOString()}`;
+          if (lastAlarmKeyRef.current !== alarmKey) {
+            lastAlarmKeyRef.current = alarmKey;
+            setTriggeredAlarm(upcoming);
+
+            if (settings.soundAlerts) {
+              playSessionAlarm({
+                durationSeconds: settings.alertDurationSeconds || 5,
+                tone: settings.alertSoundTone || 'chime',
+              });
+            }
+
+            if (
+              typeof Notification !== 'undefined' &&
+              Notification.permission === 'granted'
+            ) {
+              new Notification(`${upcoming.session.name} Alarm!`, {
+                body: `Session opens at ${upcoming.formattedLocalTime}. Reminder: ${upcoming.session.prepReminder}`,
+              });
+            }
           }
         }
       }
     };
 
     checkSessionAlarm();
-    const interval = setInterval(checkSessionAlarm, 5000);
+    // Fast 1-second interval ensures immediate automatic transition the second Asian ends
+    const interval = setInterval(checkSessionAlarm, 1000);
     return () => clearInterval(interval);
-  }, [sessions, settings.timezone, settings.soundAlerts]);
+  }, [
+    sessions,
+    settings.timezone,
+    settings.soundAlerts,
+    settings.alertDurationSeconds,
+    settings.alertSoundTone,
+    settings.notifyOnSessionSwitch,
+  ]);
 
   // Calculations
   const analytics = useMemo(() => {
@@ -161,8 +207,13 @@ export default function App() {
     reader.readAsText(file);
   };
 
-  // Challenge actions
+  // Challenge actions - strictly lock past days so uncompleted habits cannot be retroactively modified
   const handleToggleChallengeDay = (challengeId: string, dateStr: string) => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (dateStr !== todayStr) {
+      // Habit integrity rule: only today's challenge can be checked/modified
+      return;
+    }
     const updated = challenges.map(ch => {
       if (ch.id !== challengeId) return ch;
       const isDone = ch.completedDates.includes(dateStr);
@@ -178,6 +229,10 @@ export default function App() {
   };
 
   const handleRecordMissedDay = (challengeId: string, dateStr: string) => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (dateStr !== todayStr) {
+      return;
+    }
     const updated = challenges.map(ch => {
       if (ch.id !== challengeId) return ch;
       const isMissed = ch.missedDates.includes(dateStr);
@@ -250,6 +305,15 @@ export default function App() {
     saveStoredTrades([]);
   };
 
+  const handleReloadAllData = () => {
+    setTrades(loadStoredTrades());
+    setSessions(loadStoredSessions());
+    setChallenges(loadStoredChallenges());
+    setRules(loadStoredRules());
+    setReviews(loadStoredReviews());
+    setSettings(loadStoredSettings());
+  };
+
   // Post session review save
   const handleSaveReview = (review: SessionReview) => {
     const updated = [review, ...reviews];
@@ -263,8 +327,12 @@ export default function App() {
       {triggeredAlarm && (
         <AlarmBanner
           alarm={triggeredAlarm}
-          onDismiss={() => setTriggeredAlarm(null)}
+          onDismiss={() => {
+            stopSessionAlarm();
+            setTriggeredAlarm(null);
+          }}
           onOpenChecklist={s => {
+            stopSessionAlarm();
             setSelectedSessionForPre(s);
             setIsPreSessionModalOpen(true);
             setTriggeredAlarm(null);
@@ -392,6 +460,7 @@ export default function App() {
         onSaveSettings={handleUpdateSettings}
         onResetToDemoData={handleResetToDemoData}
         onClearAllData={handleClearAllData}
+        onReloadAllData={handleReloadAllData}
       />
 
       <InstallModal

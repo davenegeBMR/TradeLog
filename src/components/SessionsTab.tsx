@@ -6,18 +6,22 @@ import {
   getEffectiveSessionUtcStart,
   isDaylightSavingTime,
 } from '../utils/sessions';
-import { playSessionChime } from '../utils/sound';
+import { playSessionAlarm, stopSessionAlarm } from '../utils/sound';
 import {
   Clock,
   Bell,
   BellRing,
   Volume2,
+  VolumeX,
   Check,
   ShieldCheck,
   Globe,
   Sun,
   AlertCircle,
   HelpCircle,
+  Radio,
+  Sliders,
+  Sparkles,
 } from 'lucide-react';
 
 interface SessionsTabProps {
@@ -64,7 +68,11 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
         return;
       }
       const now = Date.now();
-      const diff = Math.max(0, Math.floor((nextAlarm.startDate.getTime() - now) / 1000));
+      // If session is active now, count down to session close; if upcoming, count down to open
+      const targetTime = nextAlarm.isActiveRightNow
+        ? nextAlarm.endDate.getTime()
+        : nextAlarm.startDate.getTime();
+      const diff = Math.max(0, Math.floor((targetTime - now) / 1000));
       const hours = Math.floor(diff / 3600);
       const minutes = Math.floor((diff % 3600) / 60);
       const seconds = diff % 60;
@@ -77,6 +85,13 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
     const interval = setInterval(updateCountdown, 1000);
     return () => clearInterval(interval);
   }, [nextAlarm]);
+
+  // Clean up any test audio on component unmount
+  useEffect(() => {
+    return () => {
+      stopSessionAlarm();
+    };
+  }, []);
 
   const handleToggleSession = (id: string) => {
     const updated = sessions.map(s => (s.id === id ? { ...s, enabled: !s.enabled } : s));
@@ -105,9 +120,19 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
   };
 
   const handleTestSound = () => {
+    if (testChimePlaying) {
+      stopSessionAlarm();
+      setTestChimePlaying(false);
+      return;
+    }
     setTestChimePlaying(true);
-    playSessionChime();
-    setTimeout(() => setTestChimePlaying(false), 800);
+    const duration = settings.alertDurationSeconds || 5;
+    const tone = settings.alertSoundTone || 'chime';
+    playSessionAlarm({
+      durationSeconds: duration,
+      tone,
+      onFinish: () => setTestChimePlaying(false),
+    });
   };
 
   const handleRequestNotifications = async () => {
@@ -152,10 +177,23 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
           <button
             type="button"
             onClick={handleTestSound}
-            className="px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors ${
+              testChimePlaying
+                ? 'bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold animate-pulse'
+                : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
+            }`}
           >
-            <Volume2 className={`w-4 h-4 ${testChimePlaying ? 'text-amber-500' : ''}`} />
-            <span>Test Alarm Sound</span>
+            {testChimePlaying ? (
+              <>
+                <VolumeX className="w-4 h-4 text-slate-950" />
+                <span>Stop Sound ({settings.alertDurationSeconds || 5}s)</span>
+              </>
+            ) : (
+              <>
+                <Volume2 className="w-4 h-4 text-slate-500" />
+                <span>Test Alarm ({settings.alertDurationSeconds || 5}s)</span>
+              </>
+            )}
           </button>
 
           <button
@@ -181,19 +219,30 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
               <div className="flex items-center gap-2 mb-1.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
                 <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
-                  Next Scheduled Session
+                  {nextAlarm.isActiveRightNow ? 'ACTIVE SESSION NOW' : 'NEXT SCHEDULED SESSION'}
                 </span>
+                {nextAlarm.isActiveRightNow && (
+                  <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-2 py-0.5 rounded-full border border-emerald-500/30">
+                    Live Market
+                  </span>
+                )}
               </div>
               <h3 className="text-2xl font-extrabold">{nextAlarm.session.name}</h3>
               <p className="text-xs text-slate-300 mt-1 max-w-md">
-                Local time: <span className="font-bold text-white">{nextAlarm.formattedLocalTime}</span> ({settings.timezone.replace('_', ' ')})
+                Local time:{' '}
+                <span className="font-bold text-white">{nextAlarm.formattedLocalTime}</span> ({settings.timezone.replace('_', ' ')})
               </p>
+              {nextAlarm.isActiveRightNow && (
+                <p className="text-[11px] text-emerald-300 mt-1 flex items-center gap-1">
+                  <span>● Automatic Transition:</span> Automatically switches to the next session when this session ends.
+                </p>
+              )}
             </div>
 
             {/* Countdown Display */}
-            <div className="bg-white/10 backdrop-blur-xs border border-white/10 px-5 py-3 rounded-2xl text-center">
+            <div className="bg-white/10 backdrop-blur-xs border border-white/10 px-5 py-3 rounded-2xl text-center shrink-0">
               <span className="text-[10px] text-slate-300 font-semibold uppercase tracking-wider block">
-                Time Until Open
+                {nextAlarm.isActiveRightNow ? 'Time Until Session Close' : 'Time Until Session Open'}
               </span>
               <div className="text-3xl font-mono font-bold tracking-tight text-white mt-0.5">
                 {countdownStr || '00:00:00'}
@@ -202,6 +251,143 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
           </div>
         </div>
       )}
+
+      {/* 2. Alert Types & Audio Duration Configuration */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-xs space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-amber-500/10 text-amber-500">
+              <BellRing className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                Alerts & Sound Duration
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Customize alert tone, duration of the audible chime, and automatic session transition notifications
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 hidden sm:inline">
+              Sound Audio:
+            </span>
+            <button
+              type="button"
+              onClick={() => onUpdateSettings({ ...settings, soundAlerts: !settings.soundAlerts })}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                settings.soundAlerts ? 'bg-emerald-600' : 'bg-slate-200 dark:bg-slate-700'
+              }`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                  settings.soundAlerts ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+          {/* Alert Duration Selection */}
+          <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700/80">
+            <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
+              Alarm Sound Duration
+            </label>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2.5">
+              How long the chime rings when a session triggers or switches:
+            </p>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {[3, 5, 10, 15, 30].map(sec => {
+                const isSelected = (settings.alertDurationSeconds || 5) === sec;
+                return (
+                  <button
+                    key={sec}
+                    type="button"
+                    onClick={() => onUpdateSettings({ ...settings, alertDurationSeconds: sec })}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                      isSelected
+                        ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xs'
+                        : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    }`}
+                  >
+                    {sec} Seconds
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Alert Sound Tone Selection */}
+          <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700/80">
+            <label className="block text-xs font-bold text-slate-800 dark:text-slate-200 mb-1">
+              Alarm Sound Tone Style
+            </label>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2.5">
+              Select the audio chime pattern that fits your trading environment:
+            </p>
+            <div className="grid grid-cols-3 gap-1.5">
+              {[
+                { id: 'chime', label: 'Melodic Chime' },
+                { id: 'bell', label: 'Crystal Bell' },
+                { id: 'radar', label: 'Sonar Radar' },
+              ].map(t => {
+                const isSelected = (settings.alertSoundTone || 'chime') === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => {
+                      onUpdateSettings({ ...settings, alertSoundTone: t.id as any });
+                      playSessionAlarm({ durationSeconds: 2, tone: t.id as any });
+                    }}
+                    className={`px-2 py-1.5 rounded-xl text-xs font-bold text-center transition-all ${
+                      isSelected
+                        ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xs'
+                        : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Automatic Session Switch Notification Toggle */}
+        <div className="p-3 bg-slate-50/80 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2.5">
+            <Radio className="w-4 h-4 text-indigo-500 shrink-0" />
+            <div>
+              <span className="font-bold text-slate-800 dark:text-slate-200 block">
+                Automatic Session Transition Alerts
+              </span>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                Play an audible alert and notification when Asian session ends and switches to London, London to Overlap/NY, etc.
+              </span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() =>
+              onUpdateSettings({
+                ...settings,
+                notifyOnSessionSwitch: settings.notifyOnSessionSwitch !== false ? false : true,
+              })
+            }
+            className={`px-3 py-1.5 rounded-xl font-bold shrink-0 transition-colors ${
+              settings.notifyOnSessionSwitch !== false
+                ? 'bg-emerald-600 text-white'
+                : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+            }`}
+          >
+            {settings.notifyOnSessionSwitch !== false ? 'Enabled' : 'Disabled'}
+          </button>
+        </div>
+      </div>
 
       {/* 2. Timezone & Daylight Saving Time Settings */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-xs">
@@ -324,8 +510,8 @@ export const SessionsTab: React.FC<SessionsTabProps> = ({
                     <span className="font-semibold text-slate-700 dark:text-slate-300">
                       Alarm Timing Before Open:
                     </span>
-                    <div className="flex items-center gap-1.5">
-                      {[0, 5, 10, 15, 30].map(mins => (
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {[0, 5, 10, 15, 30, 45, 60].map(mins => (
                         <button
                           key={mins}
                           type="button"

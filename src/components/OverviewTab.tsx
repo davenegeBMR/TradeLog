@@ -5,6 +5,7 @@ import { EquityChart } from './EquityChart';
 import { SessionHeatmap } from './SessionHeatmap';
 import { InstrumentBreakdown } from './InstrumentBreakdown';
 import { DailyPerformanceTable } from './DailyPerformanceTable';
+import { formatUtcToTargetTz } from '../utils/sessions';
 import {
   TrendingUp,
   TrendingDown,
@@ -104,7 +105,24 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                 {nextAlarm.session.name}
               </h2>
               <p className="text-xs text-slate-300 mt-1 max-w-md">
-                Starts at <span className="font-bold text-white">{nextAlarm.formattedLocalTime}</span>. {nextAlarm.session.prepReminder}
+                {nextAlarm.isActiveRightNow ? (
+                  <>
+                    Live market session · Closes at{' '}
+                    <span className="font-bold text-white">
+                      {formatUtcToTargetTz(
+                        nextAlarm.session.endHourUtc,
+                        nextAlarm.session.endMinuteUtc,
+                        settings.timezone
+                      )}
+                    </span>
+                    {' '}· Switches automatically upon close
+                  </>
+                ) : (
+                  <>
+                    Starts at <span className="font-bold text-white">{nextAlarm.formattedLocalTime}</span>.{' '}
+                    {nextAlarm.session.prepReminder}
+                  </>
+                )}
               </p>
             </div>
 

@@ -6,6 +6,9 @@ export const INITIAL_SETTINGS: UserSettings = {
   dailyLossLimit: 200,
   maxRiskPerTradePercent: 1.0,
   soundAlerts: true,
+  alertDurationSeconds: 5,
+  alertSoundTone: 'chime',
+  notifyOnSessionSwitch: true,
   browserNotifications: false,
   theme: 'light',
 };

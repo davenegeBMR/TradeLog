@@ -12,6 +12,7 @@ import {
   Edit3,
   X,
   FileText,
+  Lock,
 } from 'lucide-react';
 
 interface ChallengesTabProps {
@@ -274,8 +275,11 @@ export const ChallengesTab: React.FC<ChallengesTabProps> = ({
               {/* 14-Day Calendar Heat Strip */}
               <div>
                 <div className="flex items-center justify-between text-[11px] text-slate-400 mb-2">
-                  <span>Recent 14-day history:</span>
-                  <span>Click date to toggle or add note</span>
+                  <span className="flex items-center gap-1">
+                    <Lock className="w-3 h-3 text-slate-400" />
+                    <span>Past days locked (habit discipline) · Only today can be marked</span>
+                  </span>
+                  <span>Today is highlighted</span>
                 </div>
 
                 <div className="grid grid-cols-7 sm:grid-cols-14 gap-1.5">
@@ -290,17 +294,35 @@ export const ChallengesTab: React.FC<ChallengesTabProps> = ({
                       <div key={dateStr} className="relative group">
                         <button
                           type="button"
-                          onClick={() => onToggleDay(ch.id, dateStr)}
+                          disabled={!isToday}
+                          onClick={() => {
+                            if (isToday) {
+                              onToggleDay(ch.id, dateStr);
+                            }
+                          }}
                           className={`w-full aspect-square rounded-xl text-[11px] font-mono font-bold flex flex-col items-center justify-center transition-all ${
                             isDone
                               ? 'bg-emerald-500 text-white'
                               : isMissed
                               ? 'bg-rose-500/80 text-white'
-                              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
-                          } ${isToday ? 'ring-2 ring-slate-900 dark:ring-white' : ''}`}
-                          title={`${dateStr}: ${isDone ? 'Completed' : isMissed ? 'Missed' : 'Not recorded'}`}
+                              : !isToday
+                              ? 'bg-slate-100 dark:bg-slate-800/60 text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-75'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 cursor-pointer'
+                          } ${isToday ? 'ring-2 ring-slate-900 dark:ring-white shadow-xs' : ''}`}
+                          title={
+                            isToday
+                              ? `${dateStr} (Today): Click to mark ${isDone ? 'incomplete' : 'completed'}`
+                              : isDone
+                              ? `${dateStr}: Completed (Locked past day)`
+                              : `${dateStr}: Not completed · Past days are locked and cannot be modified`
+                          }
                         >
-                          <span>{dayNum}</span>
+                          <span className="flex items-center gap-0.5">
+                            {dayNum}
+                            {!isToday && !isDone && (
+                              <Lock className="w-2 h-2 opacity-50" />
+                            )}
+                          </span>
                           {hasNote && <span className="w-1 h-1 bg-amber-400 rounded-full mt-0.5"></span>}
                         </button>
 

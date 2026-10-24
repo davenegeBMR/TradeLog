@@ -20,7 +20,8 @@ export interface Trade {
   plannedRR: number; // Planned Risk-to-Reward ratio (e.g. 2.5)
   realizedRR: number; // Realized Risk-to-Reward ratio
   strategy: string; // e.g. "Liquidity Sweep", "Fair Value Gap", "Break & Retest"
-  screenshotUrl?: string; // base64 or URL
+  screenshotUrl?: string; // base64 or URL (legacy single screenshot)
+  screenshots?: string[]; // multiple screenshots: before, entry, exit, HTF bias
   notes?: string;
   rulesFollowed: boolean;
   fees?: number; // Spread, commission, swap
@@ -47,8 +48,10 @@ export interface NextSessionAlarm {
   session: SessionConfig;
   startDate: Date;
   alarmDate: Date;
+  endDate: Date;
   secondsUntilStart: number;
   secondsUntilAlarm: number;
+  secondsUntilEnd: number;
   isAlarmTriggeredNow: boolean;
   isActiveRightNow: boolean;
   formattedLocalTime: string;
@@ -96,6 +99,9 @@ export interface UserSettings {
   dailyLossLimit: number;
   maxRiskPerTradePercent: number;
   soundAlerts: boolean;
+  alertDurationSeconds?: number; // Duration of alarm chime in seconds (e.g. 3, 5, 10, 15, 30)
+  alertSoundTone?: 'chime' | 'bell' | 'radar'; // Alarm audio tone style
+  notifyOnSessionSwitch?: boolean; // Trigger alert when one session ends and switches to the next (e.g. Asian -> London)
   browserNotifications: boolean;
   theme: 'light' | 'dark';
 }

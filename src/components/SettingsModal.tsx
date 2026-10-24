@@ -1,7 +1,22 @@
 import React, { useState } from 'react';
 import { UserSettings } from '../types';
 import { POPULAR_TIMEZONES } from '../utils/sessions';
-import { X, Sliders, RotateCcw, Trash2, Sun, Moon, Volume2, Download, GitBranch, Copy, Check } from 'lucide-react';
+import { exportFullBackupJSON, importFullBackupJSON } from '../utils/storage';
+import {
+  X,
+  Sliders,
+  RotateCcw,
+  Trash2,
+  Sun,
+  Moon,
+  Volume2,
+  Download,
+  Upload,
+  GitBranch,
+  Copy,
+  Check,
+  ShieldCheck,
+} from 'lucide-react';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -10,6 +25,7 @@ interface SettingsModalProps {
   onSaveSettings: (settings: UserSettings) => void;
   onResetToDemoData: () => void;
   onClearAllData: () => void;
+  onReloadAllData?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -19,6 +35,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onSaveSettings,
   onResetToDemoData,
   onClearAllData,
+  onReloadAllData,
 }) => {
   if (!isOpen) return null;
 
@@ -222,6 +239,61 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   {copiedGit ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                 </button>
               </div>
+            </div>
+          </div>
+
+          {/* Data Backup & Phone Migration */}
+          <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                Data Backup & Safety
+              </span>
+              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5" /> Saved in App Storage
+              </span>
+            </div>
+
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Your trades, photos, and challenges stay saved on your phone. Download a full JSON backup to keep your journal 100% safe, or to transfer your trades to another device.
+            </p>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => exportFullBackupJSON()}
+                className="px-3 py-2 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-xl font-bold flex items-center justify-center gap-1.5 transition-colors"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export Backup (JSON)</span>
+              </button>
+
+              <label className="cursor-pointer px-3 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-xl font-bold flex items-center justify-center gap-1.5 transition-colors text-center">
+                <Upload className="w-3.5 h-3.5" />
+                <span>Restore Backup</span>
+                <input
+                  type="file"
+                  accept=".json,application/json"
+                  className="hidden"
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = ev => {
+                      const content = ev.target?.result;
+                      if (typeof content === 'string') {
+                        const res = importFullBackupJSON(content);
+                        alert(res.message);
+                        if (res.success && onReloadAllData) {
+                          onReloadAllData();
+                          onClose();
+                        }
+                      }
+                    };
+                    reader.readAsText(file);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
             </div>
           </div>
 

@@ -150,7 +150,8 @@ export function getEffectiveSessionUtcStart(session: SessionConfig, date = new D
 
 
 /**
- * Computes next upcoming session alarm
+ * Computes the current active session or next upcoming session alarm.
+ * Automatically transitions to London when Asian session ends, London to NY, etc.
  */
 export function getNextUpcomingSession(
   sessions: SessionConfig[],
@@ -160,12 +161,13 @@ export function getNextUpcomingSession(
   const enabledSessions = sessions.filter(s => s.enabled);
   if (enabledSessions.length === 0) return null;
 
-  let closest: NextSessionAlarm | null = null;
   const nowMs = now.getTime();
+  const activeSessions: NextSessionAlarm[] = [];
+  const upcomingSessions: NextSessionAlarm[] = [];
 
   for (const session of enabledSessions) {
-    // Check today and the next 7 days to find the closest upcoming start
-    for (let dayOffset = 0; dayOffset <= 7; dayOffset++) {
+    // Check candidate days around current time (-1 day to catch overnight spans, up to +7 days)
+    for (let dayOffset = -1; dayOffset <= 7; dayOffset++) {
       const candidateDate = new Date(now);
       candidateDate.setUTCDate(candidateDate.getUTCDate() + dayOffset);
       const dayOfWeek = candidateDate.getUTCDay();
@@ -173,25 +175,29 @@ export function getNextUpcomingSession(
       if (!session.activeDays.includes(dayOfWeek)) continue;
 
       const { hour, minute } = getEffectiveSessionUtcStart(session, candidateDate);
-      const startUtcDate = new Date(Date.UTC(
-        candidateDate.getUTCFullYear(),
-        candidateDate.getUTCMonth(),
-        candidateDate.getUTCDate(),
-        hour,
-        minute,
-        0
-      ));
+      const startUtcDate = new Date(
+        Date.UTC(
+          candidateDate.getUTCFullYear(),
+          candidateDate.getUTCMonth(),
+          candidateDate.getUTCDate(),
+          hour,
+          minute,
+          0
+        )
+      );
 
       // End time UTC
-      const endUtcDate = new Date(Date.UTC(
-        candidateDate.getUTCFullYear(),
-        candidateDate.getUTCMonth(),
-        candidateDate.getUTCDate(),
-        session.endHourUtc,
-        session.endMinuteUtc,
-        0
-      ));
-      if (endUtcDate < startUtcDate) {
+      const endUtcDate = new Date(
+        Date.UTC(
+          candidateDate.getUTCFullYear(),
+          candidateDate.getUTCMonth(),
+          candidateDate.getUTCDate(),
+          session.endHourUtc,
+          session.endMinuteUtc,
+          0
+        )
+      );
+      if (endUtcDate.getTime() <= startUtcDate.getTime()) {
         endUtcDate.setUTCDate(endUtcDate.getUTCDate() + 1);
       }
 
@@ -199,29 +205,53 @@ export function getNextUpcomingSession(
 
       const isActiveNow = nowMs >= startUtcDate.getTime() && nowMs < endUtcDate.getTime();
       const secondsUntilStart = Math.floor((startUtcDate.getTime() - nowMs) / 1000);
+      const secondsUntilEnd = Math.floor((endUtcDate.getTime() - nowMs) / 1000);
       const secondsUntilAlarm = Math.floor((alarmUtcDate.getTime() - nowMs) / 1000);
 
-      // We consider it upcoming if start is in the future
-      if (secondsUntilStart > 0 || isActiveNow) {
-        const formattedLocalTime = formatUtcToTargetTz(hour, minute, targetTimezone, candidateDate);
-        const result: NextSessionAlarm = {
-          session,
-          startDate: startUtcDate,
-          alarmDate: alarmUtcDate,
-          secondsUntilStart,
-          secondsUntilAlarm,
-          isAlarmTriggeredNow: secondsUntilAlarm <= 0 && secondsUntilStart > 0,
-          isActiveRightNow: isActiveNow,
-          formattedLocalTime,
-        };
+      const formattedLocalTime = formatUtcToTargetTz(hour, minute, targetTimezone, candidateDate);
 
-        if (!closest || (secondsUntilStart > 0 && secondsUntilStart < closest.secondsUntilStart)) {
-          closest = result;
-        }
-        break; // Only need earliest occurrence for this session
+      const alarmItem: NextSessionAlarm = {
+        session,
+        startDate: startUtcDate,
+        alarmDate: alarmUtcDate,
+        endDate: endUtcDate,
+        secondsUntilStart,
+        secondsUntilAlarm,
+        secondsUntilEnd,
+        isAlarmTriggeredNow: secondsUntilAlarm <= 0 && secondsUntilStart > 0,
+        isActiveRightNow: isActiveNow,
+        formattedLocalTime,
+      };
+
+      if (isActiveNow) {
+        activeSessions.push(alarmItem);
+        break;
+      } else if (secondsUntilStart > 0) {
+        upcomingSessions.push(alarmItem);
+        break; // Closest upcoming instance for this session
       }
     }
   }
 
-  return closest;
+  // 1. If any session is currently active right now:
+  if (activeSessions.length > 0) {
+    // If multiple active (e.g. during London/Asian overlap or London/NY overlap):
+    // Prioritize the one with the latest start time (the session that opened most recently)
+    // Or if tied, the one with longest remaining time until end
+    activeSessions.sort((a, b) => {
+      if (b.startDate.getTime() !== a.startDate.getTime()) {
+        return b.startDate.getTime() - a.startDate.getTime();
+      }
+      return b.secondsUntilEnd - a.secondsUntilEnd;
+    });
+    return activeSessions[0];
+  }
+
+  // 2. If no session is active right now, pick the earliest upcoming session
+  if (upcomingSessions.length > 0) {
+    upcomingSessions.sort((a, b) => a.secondsUntilStart - b.secondsUntilStart);
+    return upcomingSessions[0];
+  }
+
+  return null;
 }

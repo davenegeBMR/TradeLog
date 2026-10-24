@@ -18,7 +18,13 @@ export function loadStoredTrades(): Trade[] {
       saveStoredTrades(INITIAL_TRADES);
       return INITIAL_TRADES;
     }
-    return JSON.parse(raw);
+    const parsed: Trade[] = JSON.parse(raw);
+    return parsed.map(t => {
+      if (!t.screenshots || t.screenshots.length === 0) {
+        t.screenshots = t.screenshotUrl ? [t.screenshotUrl] : [];
+      }
+      return t;
+    });
   } catch (e) {
     console.error('Failed to load trades from storage', e);
     return INITIAL_TRADES;
@@ -245,3 +251,68 @@ export function parseCSVToTrades(csvText: string): Trade[] {
 
   return trades;
 }
+
+export function exportFullBackupJSON(): void {
+  try {
+    const backupData = {
+      version: '1.1',
+      appName: 'TradeLog',
+      exportDate: new Date().toISOString(),
+      trades: loadStoredTrades(),
+      sessions: loadStoredSessions(),
+      challenges: loadStoredChallenges(),
+      rules: loadStoredRules(),
+      reviews: loadStoredReviews(),
+      settings: loadStoredSettings(),
+    };
+    const jsonStr = JSON.stringify(backupData, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `TradeLog_FullBackup_${new Date().toISOString().split('T')[0]}.json`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error('Failed to export JSON backup', err);
+  }
+}
+
+export function importFullBackupJSON(jsonText: string): { success: boolean; message: string } {
+  try {
+    const data = JSON.parse(jsonText);
+    if (!data || typeof data !== 'object') {
+      return { success: false, message: 'Invalid JSON file format.' };
+    }
+
+    if (Array.isArray(data.trades)) {
+      saveStoredTrades(data.trades);
+    }
+    if (Array.isArray(data.challenges)) {
+      saveStoredChallenges(data.challenges);
+    }
+    if (Array.isArray(data.sessions)) {
+      saveStoredSessions(data.sessions);
+    }
+    if (Array.isArray(data.rules)) {
+      saveStoredRules(data.rules);
+    }
+    if (Array.isArray(data.reviews)) {
+      saveStoredReviews(data.reviews);
+    }
+    if (data.settings && typeof data.settings === 'object') {
+      saveStoredSettings(data.settings);
+    }
+
+    return {
+      success: true,
+      message: `Successfully restored ${Array.isArray(data.trades) ? data.trades.length : 0} trades and settings!`,
+    };
+  } catch (err) {
+    console.error('Failed to parse JSON backup', err);
+    return { success: false, message: 'Could not read backup file. Make sure it is a valid TradeLog backup.' };
+  }
+}
+
